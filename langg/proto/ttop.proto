@@ -1,0 +1,19 @@
+syntax = "proto2";
+
+package ttop_proto;
+
+message TreeTop {
+  message Tree {
+    message Node {
+      required string char = 1;
+      required int64 depth = 2;
+      required int64 visits = 3;
+      repeated Node children = 4;
+    }
+    required string name = 1;
+    repeated string considered_chars = 2;
+    repeated string root_chars = 3;
+    required Node root = 4;
+  }
+  repeated Tree tree = 1;
+}
