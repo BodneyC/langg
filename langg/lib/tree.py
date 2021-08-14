@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 from .node import Node
+from ..util import consts
 import langg.proto.ttop_pb2 as ttop_pb2
 
 import os
-import string
-import argparse
-
-CONSIDERED_CHARS = list(string.ascii_lowercase) + \
-    list(string.whitespace) + ['\'']
+from types import SimpleNamespace
 
 
 class Tree:
@@ -20,7 +17,7 @@ class Tree:
         self.root = None
 
     @classmethod
-    def from_cli(cls, infiles: [str], args: argparse.Namespace) -> Tree:
+    def from_cli(cls, infiles: [str], args: SimpleNamespace) -> Tree:
         _self: Tree = Tree()
         _self.name: str = '_'.join(
             [os.path.splitext(os.path.basename(fn))[0] for fn in infiles])
@@ -28,20 +25,29 @@ class Tree:
 
         _self.root: Node = Node()
 
-        chars_list: [str] = list(args.chars or '')
-        _self.considered_chars: [str] = chars_list or CONSIDERED_CHARS
+        chars_list: [str] = list(args.op_data.root_chars or '')
+        _self.considered_chars: [str] = chars_list or consts.CONSIDERED_CHARS
 
-        roots_list: [str] = list(args.root_chars or '')
-        _self.root_chars: [str] = roots_list or CONSIDERED_CHARS
+        roots_list: [str] = list(args.op_data.root_chars or '')
+        _self.root_chars: [str] = roots_list or consts.CONSIDERED_CHARS
         return _self
 
     @classmethod
     def from_protobuf(cls, tree: ttop_pb2.TreeTop.Tree) -> Tree:
         _self: Tree = Tree()
         _self.name = tree.name
-        _self.considered_chars = tree.considered_chars
-        _self.root_chars = tree.root_chars
+        _self.considered_chars = list(tree.considered_chars)
+        _self.root_chars = list(tree.root_chars)
         _self.root = Node.from_protobuf(tree.root)
+        return _self
+
+    @classmethod
+    def from_json(cls, tree: dict) -> Tree:
+        _self: Tree = Tree()
+        _self.name = tree['name']
+        _self.considered_chars = tree['considered_chars']
+        _self.root_chars = tree['root_chars']
+        _self.root = Node.from_json(tree['root'])
         return _self
 
     def to_protobuf(self, tree: ttop_pb2.TreeTop.Tree) -> None:
@@ -116,6 +122,7 @@ class Tree:
     def to_dict(self) -> dict:
         return {
             'name': self.name,
-            'infiles': list(self.data.keys()),
-            **self.root.to_dict(),
+            'root_chars': self.root_chars,
+            'considered_chars': self.considered_chars,
+            'root': self.root.to_dict(),
         }

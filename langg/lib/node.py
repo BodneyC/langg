@@ -24,6 +24,17 @@ class Node:
             _self.children[e.char] = Node.from_protobuf(e)
         return _self
 
+    @classmethod
+    def from_json(cls, node: dict) -> Node:
+        _self: Node = Node()
+        _self.char = node['char']
+        _self.depth = node['depth']
+        _self.visits = node['visits']
+        if node['children']:
+            for k, v in node['children'].items():
+                _self.children[k] = Node.from_json(v)
+        return _self
+
     def __str__(self):
         return json.dumps(self.to_dict())
 

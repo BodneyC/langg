@@ -10,7 +10,7 @@ import argparse
 class TreeTop:
 
     def __init__(self):
-        self.trees = []
+        self.trees: [Tree] = []
 
     # Construction methods
 
@@ -18,7 +18,8 @@ class TreeTop:
     def from_cli(cls, args: argparse.Namespace) -> TreeTop:
         _self: TreeTop = TreeTop()
         _self.args = args
-        if _self.args.separate_trees:
+        _self.op_data = args.op_data
+        if _self.op_data.separate_trees:
             _self.trees = [Tree.from_cli(infile, args)
                            for infile in args.infiles]
         else:
@@ -27,7 +28,7 @@ class TreeTop:
 
     def parse_infiles(self):
         for tree in self.trees:
-            tree.parse_infiles(self.args.full)
+            tree.parse_infiles(self.op_data.full)
 
     @classmethod
     def from_protobuf(cls, fn: str) -> TreeTop:
@@ -37,6 +38,15 @@ class TreeTop:
         _self: TreeTop = TreeTop()
         for tree in ttop.tree:
             _self.trees.append(Tree.from_protobuf(tree))
+        return _self
+
+    @classmethod
+    def from_json(cls, fn: str) -> TreeTop:
+        with open(fn, 'rb') as f:
+            ttop = json.load(f)
+        _self: TreeTop = TreeTop()
+        for tree in ttop:
+            _self.trees.append(Tree.from_json(tree))
         return _self
 
     # Traversal methods
