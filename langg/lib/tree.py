@@ -3,6 +3,8 @@ from __future__ import annotations
 from .node import Node
 from ..util import consts
 import langg.proto.ttop_pb2 as ttop_pb2
+from ..translate.router_vals import (RouterValuesGenerator, RouterValues)
+
 
 import os
 from types import SimpleNamespace
@@ -126,3 +128,31 @@ class Tree:
             'considered_chars': self.considered_chars,
             'root': self.root.to_dict(),
         }
+
+    def build_word(self, rvg: RouterValuesGenerator,
+                   rv: RouterValues, seed: int) -> str:
+        word: str = ''
+        depth: int = 0
+        node = self.root
+        while len(word) < rv.word_length:
+            if depth < rv.max_depth:
+                if node.char in self.root.children:
+                    node = self.root.children[node.char]
+                else:
+                    node = self.root
+            idx: int = rvg.child_idx(
+                seed, [v.visits for v in node.children.values()])
+            # print(f'N children ({len(node.children)})')
+            if idx == -1:
+                if node.char in self.root.children:
+                    node = self.root.children[node.char]
+                else:
+                    node = self.root
+                continue
+            node: Node = node.children[list(node.children.keys())[idx]]
+            depth += 1
+            word += node.char
+        if rv.merge_words:
+            idx: int = self.rng.i32range(max=len(word))
+            word = word[:idx] + '\'' + word[idx:]
+        return word

@@ -4,7 +4,8 @@ from .argp_ext import (
 
 
 def parse_args():
-    parser = SeparateNamespaceArgumentParser()
+    parser = SeparateNamespaceArgumentParser(
+            prog='langg', description='Create your language')
 
     # Input
 

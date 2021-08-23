@@ -10,6 +10,8 @@ ifeq ("$(wildcard $(PROTO_PY_FILE))", "")
 	protoc -I=$(PROTO_IDIR) --python_out=$(PROTO_ODIR) $(PROTO_PB_FILE)
 endif
 
+# Generate
+
 all-letters-format-testing: fn=all-letters-format-testing
 all-letters-format-testing: generate
 
@@ -24,6 +26,22 @@ generate: protobuf
 		--json-outfile out/$(fn).json \
 		--dot-outfile out/$(fn).dot \
 		--proto-outfile out/$(fn).proto
+
+# Translate (with corncob)
+
+one-word: fn=one-word
+one-word: translate
+
+one-line: fn=one-line
+one-line: translate
+
+# make generate fn=<name-of-/dicts-file-no-ext>
+translate: protobuf
+	python -m langg \
+		--proto-in out/corncob_lowercase.proto \
+		translate \
+		--txt-infile inputs/$(fn).txt \
+		--stdout
 
 .PHONY: clean-all clean-cache clean-proto
 

@@ -31,9 +31,13 @@ def treegen(ttop: TreeTop, args: SimpleNamespace) -> None:
 
 
 def translate(ttop: TreeTop, args: SimpleNamespace) -> None:
-    op_data: SimpleNamespace = args.op_data
-
     translator: Translator = Translator(ttop, args)
+
+    if args.op_data.stdin:
+        translator.translate_stdin()
+    else:
+        txt: str = translator.translate_text()
+        print(txt)
 
 
 def run(args_dict: dict) -> None:
