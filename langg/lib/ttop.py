@@ -8,6 +8,7 @@ import argparse
 
 
 class TreeTop:
+    '''Container class for :class:`langg.lib.tree.Tree`s'''
 
     def __init__(self):
         self.trees: [Tree] = []
@@ -16,6 +17,8 @@ class TreeTop:
 
     @classmethod
     def from_cli(cls, args: argparse.Namespace) -> TreeTop:
+        '''Construct a TreeTop from a dictionary file'''
+
         _self: TreeTop = TreeTop()
         _self.args = args
         _self.op_data = args.op_data
@@ -32,6 +35,8 @@ class TreeTop:
 
     @classmethod
     def from_protobuf(cls, fn: str) -> TreeTop:
+        '''Construct a TreeTop from a protobuf output from langg'''
+
         ttop = ttop_pb2.TreeTop()
         with open(fn, 'rb') as f:
             ttop.ParseFromString(f.read())
@@ -42,6 +47,8 @@ class TreeTop:
 
     @classmethod
     def from_json(cls, fn: str) -> TreeTop:
+        '''Construct a TreeTop by deserialising a JSON file'''
+
         with open(fn, 'rb') as f:
             ttop = json.load(f)
         _self: TreeTop = TreeTop()
@@ -72,6 +79,8 @@ class TreeTop:
             f.write(self.to_protobuf().SerializeToString())
 
     def to_protobuf(self) -> ttop_pb2.TreeTop:
+        '''Serialise to a protobuf object'''
+
         ttop_proto = ttop_pb2.TreeTop()
         for tree in self.trees:
             tree.to_protobuf(ttop_proto.tree.add())
@@ -84,6 +93,8 @@ class TreeTop:
             f.write(self.to_dot())
 
     def to_dot(self) -> str:
+        '''Create a dotviz graph file'''
+
         return '\n'.join([tree.to_dot() for tree in self.trees])
 
     def write_json(self, fn: str):
@@ -91,6 +102,8 @@ class TreeTop:
             f.write(json.dumps(self.to_dict()))
 
     def to_json(self):
+        '''Serialise to JSON'''
+
         return json.dumps(self.to_dict(), indent=2)
 
     def to_dict(self) -> dict:

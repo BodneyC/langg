@@ -11,6 +11,19 @@ from types import SimpleNamespace
 
 
 class Tree:
+    '''Contains and manages the root node our our langg tree
+
+    Attributes:
+
+        name: Usually the dictionary filename which created this tree
+
+        considered_chars: Chars to consider while constructing trees
+
+        root_chars: Similar to `considered_chars` but only affecting the
+            root node
+
+        root: Root node (see :class:`langg.lib.node.Node`) of the tree
+    '''
 
     def __init__(self):
         self.name: str = ''
@@ -70,22 +83,25 @@ class Tree:
                     for i in range(len(word)):
                         self.root.parse_word(word[i:])
 
+    def _considered(self, c: str):
+        return c in self.considered_chars or c in consts.WHITESPACE_CHARS
+
     def _read_words(self, infile) -> [str]:
         with open(infile, 'r') as f:
             contents = f.read()
         warr: [str] = []
-        for idx, char in enumerate(contents.lower()):
-            if char not in self.considered_chars:
+        for i, c in enumerate(contents.lower()):
+            if not self._considered(c):
                 # Replace non-considered char with spaces, ignoring them will
                 #  cause quoted words to join
-                char = ' '
-            elif char == '\'':
+                c = ' '
+            elif c == '\'':
                 # Want to keep if an apostrophe, but not if a quote
-                if idx > 0 and contents[idx - 1] == ' ':
+                if i > 0 and contents[i - 1] == ' ':
                     continue
-                if idx < len(contents) and contents[idx + 1] == ' ':
+                if i < len(contents) and contents[i + 1] == ' ':
                     continue
-            warr.append(char)
+            warr.append(c)
         return ''.join(warr).split()
 
     def node_count(self) -> int:
@@ -130,7 +146,7 @@ class Tree:
         }
 
     def build_word(self, rvg: RouterValuesGenerator,
-                   rv: RouterValues, seed: int) -> str:
+                   rv: RouterValues) -> str:
         word: str = ''
         depth: int = 0
         node = self.root
@@ -141,7 +157,7 @@ class Tree:
                 else:
                     node = self.root
             idx: int = rvg.child_idx(
-                seed, [v.visits for v in node.children.values()])
+                rv.seed, [v.visits for v in node.children.values()])
             # print(f'N children ({len(node.children)})')
             if idx == -1:
                 if node.char in self.root.children:
@@ -152,7 +168,4 @@ class Tree:
             node: Node = node.children[list(node.children.keys())[idx]]
             depth += 1
             word += node.char
-        if rv.merge_words:
-            idx: int = self.rng.i32range(max=len(word))
-            word = word[:idx] + '\'' + word[idx:]
         return word
