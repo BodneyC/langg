@@ -53,6 +53,7 @@ def run(args_dict: dict) -> None:
         ttop = TreeTop.from_json(args.json_in)
     else:
         raise Exception('Unknown input format')
+
     if args.cmd in ('generate', 'gen', 'treegen'):
         treegen(ttop, args)
     elif args.cmd in ('translate', 'trn', 'langg'):

@@ -158,7 +158,6 @@ class Translator:
 
             i: int = 0
             while i < len(lsv.words):
-                self.rvg.rng_reset()
                 phrase: [str] = lsv.words[i:i+2]
                 rv: RouterValues = self.rvg.router_vals(phrase)
                 word: str = self.tree.build_word(self.rvg, rv)
@@ -181,7 +180,7 @@ class Translator:
                 # Merge words
                 if rv.merge_words:
                     i += 1
-                    idx: int = self.rvg.contract_at(rv.seed, word)
+                    idx: int = self.rvg.contract_at(word)
                     word = word[:idx] + '\'' + word[idx:]
                 if lsv.separate_first:
                     if i < len(lsv.separators) and not rv.merge_words:

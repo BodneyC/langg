@@ -157,7 +157,7 @@ class Tree:
                 else:
                     node = self.root
             idx: int = rvg.child_idx(
-                rv.seed, [v.visits for v in node.children.values()])
+                [v.visits for v in node.children.values()])
             # print(f'N children ({len(node.children)})')
             if idx == -1:
                 if node.char in self.root.children:
