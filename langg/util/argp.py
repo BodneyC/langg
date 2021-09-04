@@ -7,14 +7,14 @@ from .argp_ext import (
 
 def parse_args():
     parser = SeparateNamespaceArgumentParser(
-            prog='langg', description='Create your language')
+        prog='langg', description='Create your language')
 
     # Input
 
-    parser.add_argument('--log', '--log-level', type=str,
-                        help='Set the log level', default='NOTSET')
+    parser.add_argument('-l', '--log', '--log-level', type=str,
+                        help='Set the log level', default='DEBUG')
 
-    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group = parser.add_mutually_exclusive_group()
 
     input_group.add_argument('-i', '--infile', '--input-file', type=str,
                              dest='infiles', action='append',
@@ -115,6 +115,14 @@ def parse_args():
 
     p_trn.add_argument('--txt-outfile', type=str,
                        help='Print JSON to given filename')
+
+    p_bot = subparsers.add_parser('bot', help='Launch the Discord bot')
+
+    p_bot.add_argument('--token', type=str, default=None,
+                       help='Supply the discord bot token')
+
+    p_bot.add_argument('--storage-dir', type=str, default=None,
+                       help='Where to store uploaded dictionary files')
 
     return parser.parse_args()
 

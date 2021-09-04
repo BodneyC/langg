@@ -6,7 +6,7 @@ from typing import Optional
 class Squirrel3RNG:
     '''Squirrel3 class wrapper
 
-    As noise functions inherently have no sense of state where RNG's tend to,
+    As noise functions inherently have no sense of state where RNG's tend to
      this class is to wrap :class:`langg.translate.squirrel3.Squirrel3` and
      make it act as an RNG
 

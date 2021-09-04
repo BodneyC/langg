@@ -1,11 +1,16 @@
+from __future__ import annotations
+
 from ..lib.tree import Tree
 from ..lib.ttop import TreeTop
 from ..util import consts
+from ..util.namespace import Namespace
 from .router_vals import (RouterValuesGenerator, RouterValues)
 
 import sys
-import argparse
-import logging as log
+import logging
+from typing import (Optional, Callable)
+
+LOG: logging.Logger = logging.getLogger('translator')
 
 
 class LineSeparationVals:
@@ -59,9 +64,10 @@ class Translator:
 
     '''
 
-    def __init__(self, ttop: TreeTop, args: argparse.Namespace):
+    def __init__(self, ttop: TreeTop, args: Namespace, isbot: bool = False):
         self.args = args
         self.op_data = args.op_data
+        self.isbot = isbot
 
         if not ttop.trees:
             raise Exception('TreeTop provided contains no trees')
@@ -74,9 +80,17 @@ class Translator:
         self.tree: Tree = ttop.trees[tree_n]
 
         seed = self.op_data.seed or consts.DEFAULT_SEED
-        log.info(f'Running translator with initial seed: {seed}')
+        LOG.info(f'Running translator with initial seed: {seed}')
 
         self.rvg = RouterValuesGenerator(seed)
+
+    @classmethod
+    def for_bot(cls, ttop: TreeTop, username: str) -> Translator:
+        seed: int = RouterValuesGenerator.gen_seed(
+            consts.DEFAULT_SEED, username)
+
+        return Translator(ttop=ttop, args=Namespace(op_data=Namespace(
+            seed=seed, tree=0, txt=None, txt_in=None)), isbot=True)
 
     @classmethod
     def to_text(cls, lines: [[str]]):
@@ -92,7 +106,13 @@ class Translator:
             lines: [[str]] = self._translate([line])
             print(Translator.to_text(lines))
 
-    def translate_text(self) -> str:
+    def translate_text(self, txt: str) -> str:
+        '''Translates text from the source specified in `op_data`'''
+
+        lines: [[str]] = self._translate(txt.split('\n'))
+        return Translator.to_text(lines)
+
+    def translate_cli_input(self) -> str:
         '''Translates text from the source specified in `op_data`'''
 
         lines: [[str]] = self._translate(self._read_input().split('\n'))
@@ -118,15 +138,50 @@ class Translator:
         lsv = LineSeparationVals()
         lsv.separate_first = line[0] not in considered
 
-        def _get_while(i: int, bl: bool):
+        def _get_while(i: int, bl: bool) -> (str, int):
             s: str = ''
             while i < len(line) and (line[i] in considered) is bl:
                 s += line[i]
                 i += 1
             return s, i
 
+        discord_ats: [dict] = [
+            {
+                'cond': lambda i: (
+                    line[i] == '<'
+                    and len(line) > i + 3
+                    and line[i:i+3] == '<@!'
+                ),
+                'until_fn': lambda i: i > 0 and line[i-1] == '>',
+            },
+            {
+                'cond': lambda i: (
+                    line[i] == '@'
+                    and len(line) > i + 1
+                    and line[i + 1].isalnum()
+                    and (i == 0 or line[i-1].isspace())
+                ),
+                'until_fn': lambda i: line[i].isspace(),
+            }
+        ]
+
+        def _check_discord_ats(i: int) -> Optional[dict]:
+            for at in discord_ats:
+                if at['cond'](i):
+                    return at
+            return None
+
+        def _get_while_discord_ats(
+                i: int, until_fn: Callable[[int], bool]) -> (str, int):
+            s: str = ''
+            while i < len(line) and not until_fn(i):
+                s += line[i]
+                i += 1
+            return s, i
+
         i: int = 0
         while i < len(line):
+            prev_i: int = i
             if line[i] in considered:
                 start_i: int = i
                 s, i = _get_while(i, True)
@@ -139,10 +194,19 @@ class Translator:
                         [i / len(orig_word) for i in range(len(orig_word))
                             if orig_word[i].isupper()])
             else:
+                at: dict = None
+                ds, s = '', ''
+                if self.isbot:
+                    at = _check_discord_ats(i)
+                if self.isbot and at:
+                    ds, i = _get_while_discord_ats(i, at['until_fn'])
+                    LOG.info(f'''Adding discord tag '{ds}' to separators''')
                 s, i = _get_while(i, False)
-                lsv.separators += [s]
+                lsv.separators += [ds + s]
+            if prev_i == i:
+                raise Exception('No progression in splitting string')
 
-        log.debug(f'LineSeparationVals: {lsv}')
+        LOG.debug(f'LineSeparationVals: {lsv}')
 
         return lsv
 
@@ -155,41 +219,45 @@ class Translator:
 
             # There will always be one less separator than there are words
             lsv: LineSeparationVals = self._split_non_considered_chars(line)
+            print(f'SPLIT LINE: {lsv}')
 
-            i: int = 0
-            while i < len(lsv.words):
-                phrase: [str] = lsv.words[i:i+2]
-                rv: RouterValues = self.rvg.router_vals(phrase)
-                word: str = self.tree.build_word(self.rvg, rv)
+            if len(lsv.words) == 0:
+                line_output = lsv.separators.copy()
+            else:
+                i: int = 0
+                while i < len(lsv.words):
+                    phrase: [str] = lsv.words[i:i+2]
+                    rv: RouterValues = self.rvg.router_vals(phrase)
+                    word: str = self.tree.build_word(self.rvg, rv)
 
-                # Captial letters
-                upper_idx_pos: [float] = lsv.upper_idx_pos[i]
+                    # Captial letters
+                    upper_idx_pos: [float] = lsv.upper_idx_pos[i]
 
-                # Special case for all caps word
-                if len(upper_idx_pos) == 1 and upper_idx_pos[0] == -1:
-                    word = word.upper()
-                else:
-                    if rv.merge_words and i + 1 < len(lsv.words):
-                        upper_idx_pos += lsv.upper_idx_pos[i + 1]
+                    # Special case for all caps word
+                    if len(upper_idx_pos) == 1 and upper_idx_pos[0] == -1:
+                        word = word.upper()
+                    else:
+                        if rv.merge_words and i + 1 < len(lsv.words):
+                            upper_idx_pos += lsv.upper_idx_pos[i + 1]
 
-                    for pos in upper_idx_pos:
-                        new_pos: int = int(pos * len(word))
-                        word = word[:new_pos] + \
-                            word[new_pos].upper() + word[new_pos + 1:]
+                        for pos in upper_idx_pos:
+                            new_pos: int = int(pos * len(word))
+                            word = word[:new_pos] + \
+                                word[new_pos].upper() + word[new_pos + 1:]
 
-                # Merge words
-                if rv.merge_words:
+                    # Merge words
+                    if rv.merge_words:
+                        i += 1
+                        idx: int = self.rvg.contract_at(word)
+                        word = word[:idx] + '\'' + word[idx:]
+                    if lsv.separate_first:
+                        if i < len(lsv.separators) and not rv.merge_words:
+                            line_output.append(lsv.separators[i])
+                        line_output.append(word)
+                    else:
+                        line_output.append(word)
+                        if i < len(lsv.separators) and not rv.merge_words:
+                            line_output.append(lsv.separators[i])
                     i += 1
-                    idx: int = self.rvg.contract_at(word)
-                    word = word[:idx] + '\'' + word[idx:]
-                if lsv.separate_first:
-                    if i < len(lsv.separators) and not rv.merge_words:
-                        line_output.append(lsv.separators[i])
-                    line_output.append(word)
-                else:
-                    line_output.append(word)
-                    if i < len(lsv.separators) and not rv.merge_words:
-                        line_output.append(lsv.separators[i])
-                i += 1
             output.append(line_output)
         return output

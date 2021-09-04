@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from .tree import Tree
+from ..util.namespace import Namespace
 import langg.proto.ttop_pb2 as ttop_pb2
 
+import os
 import json
-import argparse
+import logging
+from typing import Optional
+
+LOG: logging.Logger = logging.getLogger('TreeTop')
 
 
 class TreeTop:
@@ -16,7 +21,16 @@ class TreeTop:
     # Construction methods
 
     @classmethod
-    def from_cli(cls, args: argparse.Namespace) -> TreeTop:
+    def for_bot(cls, fn: str) -> TreeTop:
+        '''Construct a TreeTop for the discord bot'''
+
+        _self: TreeTop = TreeTop()
+        _self.trees = [Tree.for_bot(fn)]
+        _self.op_data = Namespace(full=True)
+        return _self
+
+    @classmethod
+    def from_cli(cls, args: Namespace) -> TreeTop:
         '''Construct a TreeTop from a dictionary file'''
 
         _self: TreeTop = TreeTop()
@@ -34,8 +48,12 @@ class TreeTop:
             tree.parse_infiles(self.op_data.full)
 
     @classmethod
-    def from_protobuf(cls, fn: str) -> TreeTop:
+    def from_protobuf(cls, fn: str) -> Optional[TreeTop]:
         '''Construct a TreeTop from a protobuf output from langg'''
+
+        if not os.path.isfile(fn):
+            LOG.error(f'No such proto file: {fn}')
+            return None
 
         ttop = ttop_pb2.TreeTop()
         with open(fn, 'rb') as f:
@@ -48,6 +66,10 @@ class TreeTop:
     @classmethod
     def from_json(cls, fn: str) -> TreeTop:
         '''Construct a TreeTop by deserialising a JSON file'''
+
+        if not os.path.isfile(fn):
+            LOG.error(f'No such JSON file: {fn}')
+            return None
 
         with open(fn, 'rb') as f:
             ttop = json.load(f)

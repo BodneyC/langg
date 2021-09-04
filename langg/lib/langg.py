@@ -31,12 +31,12 @@ def treegen(ttop: TreeTop, args: SimpleNamespace) -> None:
 
 
 def translate(ttop: TreeTop, args: SimpleNamespace) -> None:
-    translator: Translator = Translator(ttop, args)
+    translator: Translator = Translator.from_cli(ttop, args)
 
     if args.op_data.stdin:
         translator.translate_stdin()
     else:
-        txt: str = translator.translate_text()
+        txt: str = translator.translate_cli_input()
         print(txt)
 
 
@@ -52,7 +52,10 @@ def run(args_dict: dict) -> None:
     elif args.json_in:
         ttop = TreeTop.from_json(args.json_in)
     else:
-        raise Exception('Unknown input format')
+        raise Exception('No input format specified')
+
+    if not ttop:
+        raise Exception('No TreeTop was generated')
 
     if args.cmd in ('generate', 'gen', 'treegen'):
         treegen(ttop, args)

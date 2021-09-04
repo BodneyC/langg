@@ -32,6 +32,19 @@ class Tree:
         self.root = None
 
     @classmethod
+    def for_bot(cls, fn: str) -> Tree:
+        _self: Tree = Tree()
+        _self.name: str = fn
+        _self.data: dict[str, [str]] = {fn: []}
+
+        _self.root: Node = Node()
+
+        _self.considered_chars: [str] = consts.CONSIDERED_CHARS
+
+        _self.root_chars: [str] = consts.CONSIDERED_CHARS
+        return _self
+
+    @classmethod
     def from_cli(cls, infiles: [str], args: SimpleNamespace) -> Tree:
         _self: Tree = Tree()
         _self.name: str = '_'.join(

@@ -1,5 +1,6 @@
-.venv
 __pycache__
 out/
 langg/translate/mt19937_64.py
 .env
+poetry.lock
+.storage

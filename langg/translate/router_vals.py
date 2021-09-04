@@ -46,10 +46,9 @@ class RouterValuesGenerator:
         self.merge_words_prob: float = MERGE_WORDS_OFFSET + \
             (self.rng.f53() / 20)
 
-    def gen_seed(self, word: str):
-        '''Generate a seed for the RNG based on a given string'''
-
-        seed: int = self.init_seed
+    @classmethod
+    def gen_seed(cls, init_seed: int, word: str) -> int:
+        seed: int = init_seed
         mod32: int = len(word) % I32_BYTE_WIDTH
         if mod32 != 0:
             mod32i: int = I32_BYTE_WIDTH - mod32
@@ -61,6 +60,11 @@ class RouterValuesGenerator:
             seed ^= int.from_bytes(bytearray(arr[i:i+I32_BYTE_WIDTH]), 'big')
 
         return seed
+
+    def _gen_seed(self, word: str) -> int:
+        '''Generate a seed for the RNG based on a given string'''
+
+        return RouterValuesGenerator.gen_seed(self.init_seed, word)
 
     def _word_len(self, words: [str]) -> int:
         base_len: int
@@ -87,13 +91,13 @@ class RouterValuesGenerator:
     def router_vals(self, words: [str]) -> RouterValues:
         rv = RouterValues()
 
-        self.rng.seed(self.gen_seed(''.join(words)))
+        self.rng.seed(self._gen_seed(''.join(words)))
 
         rv.merge_words = False
         if len(words) > 1:
             rv.merge_words = self.rng.f53() > self.merge_words_prob
 
-        self.rng.seed(self.gen_seed(words[0]))
+        self.rng.seed(self._gen_seed(words[0]))
 
         rv.max_depth: int = self.rng.i32range(max=10, min=4)
 
