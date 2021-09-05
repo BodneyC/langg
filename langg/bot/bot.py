@@ -1,13 +1,14 @@
-from discord import (Message, Attachment)
+from discord import (Message, Attachment, Embed)
 from discord.ext.commands import (
     CommandError, CommandNotFound, Context, Bot)
 
-from .user_data import (UserData, USER_DATA_BASENAME)
+from .message_util import (MSG, EMBED)
 from . import message_util as msg
-from ..util import namespace_ext as ns_ext
-from ..util.cleaning_dict import TimingDict
 from ..lib.ttop import TreeTop
 from ..translate.translator import Translator
+from ..util import namespace_ext as ns_ext
+from ..util.cleaning_dict import TimingDict
+from .user_data import (UserData, USER_DATA_BASENAME)
 
 import os
 import re
@@ -21,16 +22,16 @@ LOG: logging.Logger = logging.getLogger('bot')
 
 class BotWrapper:
     def __init__(self, op_data: dict, command_prefix: str = '!'):
-        self.bot = Bot(command_prefix=command_prefix)
+        self.bot = Bot(command_prefix=command_prefix, help_command=None)
 
         self.token: str = op_data.token or os.getenv('DISCORD_BOT_TOKEN')
         if not self.token:
-            raise Exception('DISCORD_BOT_TOKEN not provided')
+            raise Exception('Discord bot token not provided')
 
         self.storage_dir: str = op_data.storage_dir or os.getenv(
             'DISCORD_BOT_STORAGE_DIR')
         if not self.storage_dir:
-            raise Exception('DISCORD_BOT_STORAGE_DIR not provided')
+            raise Exception('Discord bot storage dir not provided')
 
         self.data: TimingDict[str, UserData] = TimingDict()
 
@@ -65,7 +66,15 @@ class BotWrapper:
     def run(self) -> None:
         self.bot.run(self.token)
 
+    ##########################################################################
+    # Bot setup
+    ##########################################################################
+
     def set_bot_commands(self) -> None:
+
+        @self.bot.command(name='help', aliases=['h'])
+        async def help(ctx: Context, *input):
+            return await self.cmd_help(ctx, *input)
 
         @self.bot.command(name='dictionary', aliases=['d', 'dict', 'upload'])
         async def dictionary(*args, **kwargs) -> None:
@@ -81,7 +90,7 @@ class BotWrapper:
 
         @self.bot.command(name='solved')
         async def solved(*args, **kwargs) -> None:
-            return await self.cmd_solved(*args, **kwargs)
+            return await self.cmd_voicesolved(*args, **kwargs)
 
         @self.bot.command(name='translate', aliases=['t', 'trn'])
         async def translate(*args, **kwargs) -> None:
@@ -97,12 +106,24 @@ class BotWrapper:
             cmds: [str] = [f'`{cmd.name}`' for cmd in self.bot.commands]
             cmds.sort()
             cmd_names: str = ', '.join(cmds)
+
+            command_start: str = ctx.message.content.split()[0] + ' ...'
+
+            embed = Embed(title='Langg Command Error',
+                          description=msg.tag_author(ctx))
             if isinstance(error, CommandNotFound):
-                await ctx.send(' '.join([
-                    msg.tag_user_string(ctx),
-                    msg.MSG.help._invalid,
-                    cmd_names
-                ]))
+                embed.add_field(name='Command not found',
+                                value=command_start, inline=False)
+                embed.add_field(name='Available commands',
+                                value=(MSG.errors
+                                       .available_commands(cmd_names)),
+                                inline=False)
+            else:
+                embed.add_field(name='Command in question',
+                                value=command_start, inline=False)
+                embed.add_field(name='Command error',
+                                value=str(error), inline=False)
+            await ctx.send(embed=embed)
             raise error
 
     def set_bot_listeners(self):
@@ -116,23 +137,54 @@ class BotWrapper:
 
         self.bot.add_listener(on_message, 'on_message')
 
+    ##########################################################################
+    # Helpers
+    ##########################################################################
+
+    def _userhash_check_glob(self, userhash: str, _solved: dict) -> str:
+        if '*' in userhash:
+            userhash_glob: str = userhash.replace('*', '.*')
+            userhash_re = re.compile(userhash_glob)
+            for k in _solved.keys():
+                if userhash_re.match(k):
+                    userhash = k
+        return userhash
+
     async def _tag_to_userhash(self, tag: str) -> str:
         untagged: str = msg.untag_user_id(tag)
         if not untagged.isnumeric():
             return untagged
         return str(await self.bot.fetch_user(untagged))
 
+    async def cmd_help(self, ctx: Context, *input) -> None:
+        embed = Embed(title='Langg Bot Help')
+        for cmd in sorted(self.bot.commands, key=lambda c: c.name):
+            if len(input) == 0 or (input[0] == cmd.name
+                                   or input[0] in cmd.aliases):
+                embed.add_field(name=cmd.name.capitalize(),
+                                value=(MSG.info[cmd.name] +
+                                       '\n\n' +
+                                       MSG.help[cmd.name]),
+                                inline=False)
+        await ctx.send(embed=embed)
+
+    ##########################################################################
+    # Commands
+    ##########################################################################
+
     async def cmd_dictionary(self, ctx: Context) -> None:
         username: str = str(ctx.author)
-        log_prefix = f'cmd_dictionary:{username}:'
+        log_prefix: str = f'cmd_dictionary:{username}:'
 
         attachments: [Attachment] = ctx.message.attachments
 
         if len(attachments) == 0:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.help.dictionary,
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.dictionary,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.no_attachment),
+                    (EMBED.sub.help, MSG.help.dictionary)]))
             LOG.debug(f'{log_prefix} No attachment sent')
             return
 
@@ -163,10 +215,11 @@ class BotWrapper:
 
         if username in self.data:
             LOG.info(f'Removing solved data for {username}')
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.data.abandon,
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.dictionary,
+                desc=MSG.tag.everyone,
+                fields=[(EMBED.sub.warning,
+                         MSG.errors.abandon(msg.tag_author(ctx)))]))
             for k, v in self.data.items():
                 if k == username:
                     continue
@@ -181,45 +234,46 @@ class BotWrapper:
         self.data[username].write()
         LOG.info(f'{log_prefix} UserData written')
 
-        await ctx.send(' '.join([
-            msg.tag_user_string(ctx),
-            msg.MSG.data.upload,
-        ]))
+        await ctx.send(embed=msg.embed(
+            title=EMBED.title.dictionary,
+            desc=msg.tag_author(ctx),
+            fields=[(EMBED.sub.status, MSG.data.upload)]))
 
     async def cmd_message(self, ctx: Context) -> None:
         username: str = str(ctx.author)
         log_prefix: str = f'cmd_message:{username}'
         cmd_parts = ctx.message.content.split(' ', 1)
 
-        if len(cmd_parts) < 2:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.help.message,
-            ]))
+        if len(cmd_parts) != 2:
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.message,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.no_message),
+                    (EMBED.sub.help, MSG.help.message)]))
             LOG.debug(f'{log_prefix} User {ctx.author} ' +
                       'did not send a message')
             return
+
         if username not in self.data or not self.data[username].translator:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.data.no_dict,
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.message,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.data.no_dict),
+                    (EMBED.sub.help, MSG.help.message)]))
             LOG.debug(f'{log_prefix} Has not created a dictionary')
             return
 
         message: str = cmd_parts[1]
-        print(f'Message: {message}')
 
-        await ctx.send(self.data[username].translator.translate_text(message))
+        sto: str = self.data[username].translator.translate_text(message)
+        LOG.debug(f'{log_prefix} Message to be sent {sto}')
 
-    def _userhash_check_glob(self, userhash: str, _solved: dict) -> str:
-        if '*' in userhash:
-            userhash_glob: str = userhash.replace('*', '.*')
-            userhash_re = re.compile(userhash_glob)
-            for k in _solved.keys():
-                if userhash_re.match(k):
-                    userhash = k
-        return userhash
+        await ctx.send(embed=msg.embed(
+            title=EMBED.title.message,
+            desc=msg.tag_author(ctx),
+            fields=[(EMBED.sub.message, sto)]))
 
     async def cmd_solve(self, ctx: Context) -> None:
         username: str = str(ctx.author)
@@ -232,10 +286,12 @@ class BotWrapper:
         _solved: dict = self.data[username].solved
 
         if (len(cmd_parts) != 4):
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.help.solve
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.solve,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.invalid_args),
+                    (EMBED.sub.help, MSG.help.solve)]))
             LOG.info(f'{log_prefix} Invalid cmd: {cmd_parts[1:]}')
             return
 
@@ -246,18 +302,22 @@ class BotWrapper:
             _solved)
 
         if '#' not in userhash:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.errors.invalid_userhash(userhash)
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.solve,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.invalid_userhash(userhash)),
+                    (EMBED.sub.help, MSG.help.solve)]))
             LOG.info(f'{log_prefix} Userhash ({userhash}) is not valid')
             return
 
         if userhash not in self.data:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.errors.solve_for(userhash)
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.solve,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.solve_for(userhash)),
+                    (EMBED.sub.help, MSG.help.solve)]))
             LOG.info(f'{log_prefix} Specified user ({userhash}) has no data')
             return
 
@@ -266,9 +326,12 @@ class BotWrapper:
 
         _solved[userhash][wfrom] = wto
 
-        await ctx.send(' '.join([msg.MSG.tag.everyone + '.',
-                                 msg.tag_user_string(ctx),
-                                 "thinks they've solved a word!"]))
+        await ctx.send(embed=msg.embed(
+            title=EMBED.title.solve,
+            desc=MSG.tag.everyone,
+            fields=[(EMBED.sub.solved,
+                     (msg.tag_author(ctx) + ' ' +
+                      "thinks they've solved a word!"))]))
 
         self.data[username].write()
         LOG.info(f'{log_prefix} UserData written')
@@ -279,23 +342,29 @@ class BotWrapper:
         cmd_parts: [str] = ctx.message.content.split()
 
         if username not in self.data:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.errors.no_data,
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.solved,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.no_data),
+                    (EMBED.sub.help, MSG.help.solve)]))
             LOG.info(f'{log_prefix} Attempt to dump solved with no data')
             return
 
         _solved: dict = self.data[username].solved
         if len(cmd_parts) == 0:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.help.solved,
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.solved,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.invalid_args),
+                    (EMBED.sub.help, MSG.help.solve)]))
             return
 
         if len(cmd_parts) == 1:
-            await ctx.author.send(msg.json_code_block(_solved))
+            await ctx.author.send(embed=msg.embed(
+                title=EMBED.title.solved,
+                fields=[(EMBED.sub.solved, msg.json_code_block(_solved))]))
             return
 
         userhash = self._userhash_check_glob(
@@ -303,39 +372,53 @@ class BotWrapper:
             _solved)
 
         if '#' not in userhash:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.errors.invalid_userhash(userhash)
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.solved,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.invalid_userhash(userhash)),
+                    (EMBED.sub.help, MSG.help.solve)]))
             LOG.info(f'{log_prefix} Userhash ({userhash}) is not valid')
             return
 
         if userhash not in _solved:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.errors.non_solved(userhash),
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.solved,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.non_solved(userhash)),
+                    (EMBED.sub.help, MSG.help.solve)]))
             LOG.info(f'{log_prefix} None yet solved for user {userhash}')
             return
 
         if len(cmd_parts) == 2:
-            await ctx.author.send(msg.json_code_block({
-                userhash: _solved[userhash]}))
+            solved_block: str = msg.json_code_block(
+                {userhash: _solved[userhash]})
+            await ctx.author.send(embed=msg.embed(
+                title=EMBED.title.solved,
+                fields=[('Solved', solved_block)]))
 
         elif len(cmd_parts) == 3:
             word: str = cmd_parts[2]
             if word not in _solved[userhash]:
-                await ctx.send(' '.join([
-                    msg.tag_user_string(ctx),
-                    msg.MSG.errors.word_not_solved(userhash, word),
-                ]))
+                await ctx.send(embed=msg.embed(
+                    title=EMBED.title.solved,
+                    desc=msg.tag_author(ctx),
+                    fields=[
+                        (EMBED.sub.error,
+                            MSG.errors.word_not_solved(userhash, word)),
+                        (EMBED.sub.help, MSG.help.solve)]))
                 LOG.info(f'{log_prefix} Word ({word}) not yet solved for '
                          f'user {userhash}')
                 return
 
-            await ctx.author.send(msg.json_code_block({
+            solved_block: str = msg.json_code_block({
                 userhash: {k: v for k, v in _solved[userhash].items()
-                           if k == word}}))
+                           if k == word}})
+
+            await ctx.author.send(embed=msg.embed(
+                title=EMBED.title.solved,
+                fields=[('Solved', solved_block)]))
 
     async def cmd_translate(self, ctx: Context) -> None:
         username: str = str(ctx.author)
@@ -343,18 +426,22 @@ class BotWrapper:
         cmd_parts = ctx.message.content.split(None, 2)
 
         if len(cmd_parts) != 3:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.help.translate,
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.translate,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.invalid_args),
+                    (EMBED.sub.help, MSG.help.translate)]))
             LOG.debug(f'{log_prefix} Invalid command: {ctx.message.content}')
             return
 
         if username not in self.data:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.data.no_dict,
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.translate,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.no_dict),
+                    (EMBED.sub.help, MSG.help.translate)]))
             LOG.debug(f'{log_prefix} Has not created a dictionary')
             return
 
@@ -365,10 +452,12 @@ class BotWrapper:
             _solved)
 
         if '#' not in userhash:
-            await ctx.send(' '.join([
-                msg.tag_user_string(ctx),
-                msg.MSG.errors.invalid_userhash(userhash)
-            ]))
+            await ctx.send(embed=msg.embed(
+                title=EMBED.title.translate,
+                desc=msg.tag_author(ctx),
+                fields=[
+                    (EMBED.sub.error, MSG.errors.invalid_userhash(userhash)),
+                    (EMBED.sub.help, MSG.help.translate)]))
             LOG.info(f'{log_prefix} Userhash ({userhash}) is not valid')
             return
 
@@ -377,8 +466,7 @@ class BotWrapper:
         if userhash in _solved:
             for wfrom, wto in _solved[userhash].items():
                 wfrom_re: re.Pattern = re.compile(
-                    f'(^| )({wfrom})( |$)',
-                    re.IGNORECASE)
+                    f'(^| )({wfrom})( |$)', re.IGNORECASE)
                 ridx: int = 0
                 for match in wfrom_re.finditer(sfrom):
                     # Note: `2` for middle group in the regex
@@ -394,19 +482,20 @@ class BotWrapper:
 
                     for pos in upper_idx_pos:
                         new_pos: int = int(pos * len(wto))
-                        wto = wto[:new_pos] + \
-                            wto[new_pos].upper() + wto[new_pos + 1:]
+                        wto = wto[:new_pos] + wto[new_pos].upper() + \
+                            wto[new_pos + 1:]
 
-                    sto += wto
-                sto += sfrom[ridx:len(sfrom)]
+                    sto += msg.bold(wto)
+                sto += sfrom[ridx: len(sfrom)]
 
         if sto == '':
             sto = sfrom
 
-        await ctx.author.send('\n'.join([
-            f'Before: {sfrom}',
-            f'Translated: {sto}',
-        ]))
+        await ctx.author.send(embed=msg.embed(
+            title=EMBED.title.translate,
+            fields=[
+                (EMBED.sub.original, sfrom),
+                (EMBED.sub.translated, sto)]))
 
 
 def run(args_dict: dict) -> None:
