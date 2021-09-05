@@ -5,7 +5,7 @@ from .argp_ext import (
 )
 
 
-def parse_args():
+def parser():
     parser = SeparateNamespaceArgumentParser(
         prog='langg', description='Create your language')
 
@@ -124,8 +124,8 @@ def parse_args():
     p_bot.add_argument('--storage-dir', type=str, default=None,
                        help='Where to store uploaded dictionary files')
 
-    return parser.parse_args()
+    return parser
 
 
 if __name__ == '__main__':
-    print(parse_args())
+    print(parser()())

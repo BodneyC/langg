@@ -4,6 +4,9 @@ version = "0.0.1"
 description = ""
 authors = ["BodneyC <benjcarrington@gmail.com>"]
 
+[tool.poetry.scripts]
+langg = "langg.__main__:main"
+
 [tool.poetry.dependencies]
 python = "^3.9"
 "discord.py" = "^1.7.3"

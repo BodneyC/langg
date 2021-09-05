@@ -16,8 +16,14 @@ def sigint(sig, frame):
     sys.exit(130)
 
 
-if __name__ == '__main__':
-    _args = argp.parse_args()
+def main():
+    parser = argp.parser()
+
+    try:
+        _args = parser.parse_args()
+    except Exception:
+        parser.print_help()
+        sys.exit(0)
 
     log.basicConfig(level=(os.getenv('LOG_LEVEL') or _args.log).upper())
 
@@ -31,3 +37,7 @@ if __name__ == '__main__':
     else:
         from .lib import langg
         langg.run(args)
+
+
+if __name__ == '__main__':
+    main()
